@@ -1,0 +1,129 @@
+USE [emsdb]
+GO
+/****** Object:  StoredProcedure [dbo].[USP_CLAIM_TRANSACTION]    Script Date: 11/16/2023 8:20:41 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER PROCEDURE [dbo].[USP_CLAIM_TRANSACTION]
+@empId INT,
+@claimId INT
+AS
+BEGIN
+	BEGIN TRY
+		BEGIN TRAN claim_tran
+		DECLARE @amount DECIMAL;
+
+		SELECT @amount = Amount FROM Claim_Master(NOLOCK) WHERE Id = @claimId;
+		INSERT INTO Employee_Claim_Transaction(Transaction_No, Employee_Id, Amount, TransactionDt, ClaimId, Status) 
+				VALUES(
+					4585,
+					@empId,
+					@amount,
+					GETDATE(),
+					@claimId,
+					1
+					)
+		COMMIT TRAN claim_tran
+		END TRY
+		BEGIN CATCH
+		ROLLBACK TRAN claim_tran
+		EXEC raise_error
+		END CATCH
+END
+
+
+
+=============================
+
+USE [emsdb]
+GO
+/****** Object:  StoredProcedure [dbo].[usp_get_transaction_data]    Script Date: 11/16/2023 8:21:25 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER proc [dbo].[usp_get_transaction_data]
+@UserId INT
+AS
+BEGIN
+
+SELECT
+		t.Transaction_No ,
+		c.Claim_Title,
+		c.Claim_Reason,
+		c.Amount,
+		c.Claim_Description,
+		c.ClaimDt,
+		t.TransactionDt,
+		u.Nm ApprovedBy
+	FROM Employee_Claim_Transaction(nolock)t
+		JOIN Claim_Master(nolock)c on c.Id=t.ClaimId
+		JOIN User_Master(nolock) u on u.Id=t.Employee_Id
+		WHERE c.UserId=@UserId
+END
+
+================================
+
+USE [emsdb]
+GO
+/****** Object:  StoredProcedure [dbo].[usp_get_claim_action_history]    Script Date: 11/16/2023 8:21:43 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER proc [dbo].[usp_get_claim_action_history]
+@claim_id int
+as
+begin
+
+select 
+convert(varchar(100),ec.ActionDt,103) ActionDt,
+ur.Nm,
+CASE
+	WHEN ec.Action='Initiated' THEN 'Claim Raised by '+ur.Nm
+	WHEN ec.Action='Pending at HR' THEN 'Claim approved by Manager '+ur.Nm
+	WHEN ec.Action='Rejected By Manager' THEN 'Claim rejected by Manager'+ ur.Nm
+	WHEN ec.Action='Rejected By HR' THEN 'Claim rejected by HR'+ur.Nm
+	WHEN ec.Action='Pending at Account' THEN 'Claim approved by HR'+ur.Nm
+	WHEN ec.Action='Completed' THEN 'Claim completed by Account '+ur.Nm END Action,
+
+ec.Remarks from Employee_Claim_Action(nolock)ec
+JOIN
+User_Master(nolock)ur on ur.Id=ec.ActionBy
+where ec.ClaimId=@claim_id
+
+end
+
+=============================
+
+USE [emsdb]
+GO
+/****** Object:  StoredProcedure [dbo].[raise_error]    Script Date: 11/16/2023 8:21:56 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER proc [dbo].[raise_error]
+as
+begin
+
+   DECLARE @ErrorMessage NVARCHAR(4000);
+    DECLARE @ErrorSeverity INT;
+    DECLARE @ErrorState INT;
+
+    SELECT 
+        @ErrorMessage = ERROR_MESSAGE(),
+        @ErrorSeverity = ERROR_SEVERITY(),
+        @ErrorState = ERROR_STATE();
+		
+    RAISERROR (@ErrorMessage, -- Message text.
+               @ErrorSeverity, -- Severity.
+               @ErrorState -- State.
+               );
+	end
+
+==============================
+
